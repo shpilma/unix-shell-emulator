@@ -1,0 +1,7 @@
+ls /etc
+cd /home/user
+ls
+pwd
+echo Тестирование VFS
+vfs-save /tmp/vfs_saved.xml
+exit

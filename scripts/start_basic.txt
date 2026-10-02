@@ -1,0 +1,11 @@
+echo Привет, мир!
+pwd
+ls
+cd /home/user
+pwd
+ls
+touch newfile.txt
+ls
+chmod 755 newfile.txt
+vfs-save /tmp/saved_vfs.xml
+exit
