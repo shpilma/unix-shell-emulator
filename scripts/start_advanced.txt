@@ -1,0 +1,9 @@
+pwd
+cd /home/user
+ls
+touch newfile.txt
+ls
+chmod 600 newfile.txt
+vfs-save /tmp/stage5_saved.xml
+echo Done with stage 5
+exit

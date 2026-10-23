@@ -1,9 +1,13 @@
-"""Эмулятор командной оболочки UNIX. Этап 4: Основные команды."""
+"""Эмулятор командной оболочки UNIX. Этап 5: chmod, touch."""
 import argparse
 import os
 import sys
 from typing import Dict, Optional
 from xml.etree import ElementTree as element_tree
+
+OCTAL_BASE = 8
+LEN_ONE = 1
+LEN_TWO = 2
 
 
 class CommandError(Exception):
@@ -19,6 +23,7 @@ class VFSNode:
         self.is_dir = is_dir
         self.content = content
         self.children: Dict[str, "VFSNode"] = {}
+        self.mode = 0o755 if is_dir else 0o644
 
 
 def _normalize_parts(path: str, cwd: str) -> list:
@@ -71,11 +76,17 @@ class VFS:
                 continue
             if child.tag == "dir":
                 node = VFSNode(name, is_dir=True)
+                mode_str = child.get("mode")
+                if mode_str:
+                    node.mode = int(mode_str, base=OCTAL_BASE)
                 parent.children[name] = node
                 self._parse_children(child, node)
             elif child.tag == "file":
                 content = child.text or ""
                 node = VFSNode(name, is_dir=False, content=content)
+                mode_str = child.get("mode")
+                if mode_str:
+                    node.mode = int(mode_str, base=OCTAL_BASE)
                 parent.children[name] = node
 
     def save_to_xml(self, path: str) -> None:
@@ -91,14 +102,15 @@ class VFS:
     ) -> None:
         """Рекурсивная сборка XML."""
         for child in node.children.values():
+            mode_str = oct(child.mode)[2:]
             if child.is_dir:
                 elem = element_tree.SubElement(
-                    parent_elem, "dir", name=child.name
+                    parent_elem, "dir", name=child.name, mode=mode_str
                 )
                 self._build_xml(child, elem)
             else:
                 elem = element_tree.SubElement(
-                    parent_elem, "file", name=child.name
+                    parent_elem, "file", name=child.name, mode=mode_str
                 )
                 elem.text = child.content
 
@@ -115,7 +127,7 @@ class VFS:
 
 def cmd_ls(vfs: VFS, cwd: str, args: list) -> str:
     """Вывод содержимого директории."""
-    if len(args) > 1:
+    if len(args) > LEN_ONE:
         raise CommandError("ls: слишком много аргументов")
     path = args[0] if args else "."
     node = vfs.resolve(path, cwd)
@@ -128,7 +140,7 @@ def cmd_ls(vfs: VFS, cwd: str, args: list) -> str:
 
 def cmd_cd(vfs: VFS, cwd: str, args: list) -> str:
     """Смена текущей директории."""
-    if len(args) > 1:
+    if len(args) > LEN_ONE:
         raise CommandError("cd: слишком много аргументов")
     path = args[0] if args else "/"
     node = vfs.resolve(path, cwd)
@@ -153,9 +165,48 @@ def cmd_echo(vfs: VFS, cwd: str, args: list) -> str:
     return " ".join(args)
 
 
+def cmd_touch(vfs: VFS, cwd: str, args: list) -> str:
+    """Создание пустого файла."""
+    if len(args) != LEN_ONE:
+        raise CommandError("touch: требуется один аргумент")
+
+    path = args[0]
+    parent_path = os.path.dirname(path) or "."
+    name = os.path.basename(path)
+
+    parent = vfs.resolve(parent_path, cwd)
+    if parent is None or not parent.is_dir:
+        raise CommandError(f"touch: {parent_path}: нет такого каталога")
+
+    if name in parent.children:
+        return ""
+
+    parent.children[name] = VFSNode(name, is_dir=False)
+    return ""
+
+
+def cmd_chmod(vfs: VFS, cwd: str, args: list) -> str:
+    """Изменение прав доступа."""
+    if len(args) != LEN_TWO:
+        raise CommandError("chmod: требуется два аргумента (mode, file)")
+
+    mode_str, path = args
+    try:
+        mode = int(mode_str, base=OCTAL_BASE)
+    except ValueError:
+        raise CommandError(f"chmod: неверный режим: {mode_str}")
+
+    node = vfs.resolve(path, cwd)
+    if node is None:
+        raise CommandError(f"chmod: {path}: нет такого файла")
+
+    node.mode = mode
+    return ""
+
+
 def cmd_vfs_save(vfs: VFS, cwd: str, args: list) -> str:
     """Сохранение VFS."""
-    if len(args) != 1:
+    if len(args) != LEN_ONE:
         raise CommandError("vfs-save: требуется путь")
     vfs.save_to_xml(args[0])
     return f"VFS сохранена в {args[0]}"
@@ -175,6 +226,8 @@ class Shell:
             "cd": cmd_cd,
             "pwd": cmd_pwd,
             "echo": cmd_echo,
+            "touch": cmd_touch,
+            "chmod": cmd_chmod,
             "vfs-save": cmd_vfs_save,
         }
 
