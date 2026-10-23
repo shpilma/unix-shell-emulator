@@ -1,0 +1,4 @@
+ls
+cd /var
+ls /etc/nginx
+exit
