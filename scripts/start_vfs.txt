@@ -1,0 +1,4 @@
+ls
+ls /home
+vfs-save /tmp/saved_vfs.xml
+exit

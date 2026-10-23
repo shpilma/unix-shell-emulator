@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vfs>
+  <dir name="etc">
+    <file name="passwd">root:x:0:0:root:/root:/bin/bash</file>
+    <file name="hosts">127.0.0.1 localhost</file>
+  </dir>
+  <dir name="home">
+    <dir name="user">
+      <file name="doc1.txt">Document 1</file>
+      <file name="doc2.txt">Document 2</file>
+    </dir>
+  </dir>
+</vfs>
