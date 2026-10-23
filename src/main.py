@@ -1,4 +1,4 @@
-"""Эмулятор командной оболочки UNIX. Этап 3: VFS."""
+"""Эмулятор командной оболочки UNIX. Этап 4: Основные команды."""
 import argparse
 import os
 import sys
@@ -19,6 +19,23 @@ class VFSNode:
         self.is_dir = is_dir
         self.content = content
         self.children: Dict[str, "VFSNode"] = {}
+
+
+def _normalize_parts(path: str, cwd: str) -> list:
+    """Нормализует путь и возвращает список компонентов."""
+    parts = [p for p in cwd.split("/") if p]
+    if path.startswith("/"):
+        parts = [p for p in path.split("/") if p]
+    else:
+        parts.extend([p for p in path.split("/") if p])
+
+    norm_parts = []
+    for p in parts:
+        if p == ".." and norm_parts:
+            norm_parts.pop()
+        elif p not in (".", ".."):
+            norm_parts.append(p)
+    return norm_parts
 
 
 class VFS:
@@ -85,31 +102,63 @@ class VFS:
                 )
                 elem.text = child.content
 
+    def resolve(self, path: str, cwd: str = "/") -> Optional[VFSNode]:
+        """Возвращает узел по пути с учётом cwd."""
+        norm_parts = _normalize_parts(path, cwd)
+        node = self.root
+        for part in norm_parts:
+            if not node.is_dir or part not in node.children:
+                return None
+            node = node.children[part]
+        return node
 
-def cmd_ls(vfs: VFS, args: list) -> str:
-    """Заглушка ls (этап 1)."""
+
+def cmd_ls(vfs: VFS, cwd: str, args: list) -> str:
+    """Вывод содержимого директории."""
+    if len(args) > 1:
+        raise CommandError("ls: слишком много аргументов")
+    path = args[0] if args else "."
+    node = vfs.resolve(path, cwd)
+    if node is None:
+        raise CommandError(f"ls: {path}: нет такого файла или каталога")
+    if not node.is_dir:
+        return node.name
+    return "  ".join(sorted(node.children.keys()))
+
+
+def cmd_cd(vfs: VFS, cwd: str, args: list) -> str:
+    """Смена текущей директории."""
+    if len(args) > 1:
+        raise CommandError("cd: слишком много аргументов")
+    path = args[0] if args else "/"
+    node = vfs.resolve(path, cwd)
+    if node is None:
+        raise CommandError(f"cd: {path}: нет такого каталога")
+    if not node.is_dir:
+        raise CommandError(f"cd: {path}: не является каталогом")
+
+    norm_parts = _normalize_parts(path, cwd)
+    return "/" if not norm_parts else "/" + "/".join(norm_parts)
+
+
+def cmd_pwd(vfs: VFS, cwd: str, args: list) -> str:
+    """Вывод текущей директории."""
     if args:
-        return "ls - " + " ".join(args)
-    return "ls"
+        raise CommandError("pwd: не принимает аргументов")
+    return cwd
 
 
-def cmd_cd(vfs: VFS, args: list) -> str:
-    """Заглушка cd (этап 1)."""
-    if args:
-        return "cd - " + " ".join(args)
-    return "cd"
+def cmd_echo(vfs: VFS, cwd: str, args: list) -> str:
+    """Вывод аргументов."""
+    return " ".join(args)
 
 
-def cmd_vfs_save(vfs: VFS, args: list) -> str:
-    """Сохранение текущего состояния VFS в XML."""
+def cmd_vfs_save(vfs: VFS, cwd: str, args: list) -> str:
+    """Сохранение VFS."""
     if len(args) != 1:
-        raise CommandError("vfs-save: требуется один аргумент (путь)")
-    path = args[0]
-    try:
-        vfs.save_to_xml(path)
-    except Exception as e:
-        raise CommandError(f"vfs-save: ошибка сохранения: {e}")
-    return f"VFS сохранена в {path}"
+        raise CommandError("vfs-save: требуется путь")
+    vfs.save_to_xml(args[0])
+    return f"VFS сохранена в {args[0]}"
 
 
 class Shell:
@@ -118,11 +167,14 @@ class Shell:
     def __init__(self, vfs: VFS, debug: bool = False):
         """Инициализация оболочки."""
         self.vfs = vfs
+        self.cwd = "/"
         self.debug = debug
         self.running = True
         self.commands = {
             "ls": cmd_ls,
             "cd": cmd_cd,
+            "pwd": cmd_pwd,
+            "echo": cmd_echo,
             "vfs-save": cmd_vfs_save,
         }
 
@@ -130,7 +182,7 @@ class Shell:
         """Приглашение к вводу."""
         user = os.getenv("USER", "user")
         host = os.uname().nodename if hasattr(os, "uname") else "host"
-        return f"{user}@{host}:~$ "
+        return f"{user}@{host}:{self.cwd}$ "
 
     def execute_line(self, line: str) -> str:
         """Выполнение одной строки."""
@@ -150,7 +202,13 @@ class Shell:
         if cmd_name not in self.commands:
             raise CommandError(f"{cmd_name}: команда не найдена")
 
-        return self.commands[cmd_name](self.vfs, args)
+        handler = self.commands[cmd_name]
+
+        if cmd_name == "cd":
+            new_cwd = handler(self.vfs, self.cwd, args)
+            self.cwd = new_cwd
+            return ""
+        return handler(self.vfs, self.cwd, args)
 
     def run_repl(self) -> None:
         """Интерактивный цикл."""

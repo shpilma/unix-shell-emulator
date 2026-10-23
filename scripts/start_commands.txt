@@ -1,0 +1,15 @@
+pwd
+ls
+cd /home
+pwd
+ls
+cd user
+pwd
+ls
+echo Hello from Stage 4
+cd /etc
+ls
+cd ..
+pwd
+ls
+exit
